@@ -103,6 +103,14 @@ class CommandsBuilderTest < ActiveSupport::TestCase
       builder.push.join(" ")
   end
 
+  test "build with ssh agent socket" do
+    builder = new_builder_command(builder: { "ssh" => 'default=$SSH_AUTH_SOCK' })
+
+    assert_equal \
+      "-t dhh/app:123 -t dhh/app:latest --label service=\"app\" --file Dockerfile --ssh default=$SSH_AUTH_SOCK",
+      builder.target.build_options.join(" ")
+  end
+
   private
     def new_builder_command(additional_config = {})
       Kamal::Commands::Builder.new(Kamal::Configuration.new(@config.merge(additional_config), version: "123"))
