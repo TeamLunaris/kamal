@@ -1,4 +1,6 @@
 class Kamal::Commands::App < Kamal::Commands::Base
+  include Assets, Containers, Cord, Execution, Images, Logging
+
   ACTIVE_DOCKER_STATUSES = [ :running, :restarting ]
 
   attr_reader :role, :role_config
@@ -20,6 +22,7 @@ class Kamal::Commands::App < Kamal::Commands::Base
       *role_config.health_check_args,
       *config.logging_args,
       *config.volume_args,
+      *role_config.asset_volume_args,
       *role_config.label_args,
       *role_config.option_args,
       config.absolute_image,
@@ -45,51 +48,6 @@ class Kamal::Commands::App < Kamal::Commands::Base
   end
 
 
-  def logs(since: nil, lines: nil, grep: nil)
-    pipe \
-      current_running_container_id,
-      "xargs docker logs#{" --since #{since}" if since}#{" --tail #{lines}" if lines} 2>&1",
-      ("grep '#{grep}'" if grep)
-  end
-
-  def follow_logs(host:, grep: nil)
-    run_over_ssh \
-      pipe(
-        current_running_container_id,
-        "xargs docker logs --timestamps --tail 10 --follow 2>&1",
-        (%(grep "#{grep}") if grep)
-      ),
-      host: host
-  end
-
-
-  def execute_in_existing_container(*command, interactive: false)
-    docker :exec,
-      ("-it" if interactive),
-      container_name,
-      *command
-  end
-
-  def execute_in_new_container(*command, interactive: false)
-    docker :run,
-      ("-it" if interactive),
-      "--rm",
-      *role_config&.env_args,
-      *config.volume_args,
-      *role_config&.option_args,
-      config.absolute_image,
-      *command
-  end
-
-  def execute_in_existing_container_over_ssh(*command, host:)
-    run_over_ssh execute_in_existing_container(*command, interactive: true), host: host
-  end
-
-  def execute_in_new_container_over_ssh(*command, host:)
-    run_over_ssh execute_in_new_container(*command, interactive: true), host: host
-  end
-
-
   def current_running_container_id
     docker :ps, "--quiet", *filter_args(statuses: ACTIVE_DOCKER_STATUSES), "--latest"
   end
@@ -105,68 +63,22 @@ class Kamal::Commands::App < Kamal::Commands::Base
   def list_versions(*docker_args, statuses: nil)
     pipe \
       docker(:ps, *filter_args(statuses: statuses), *docker_args, "--format", '"{{.Names}}"'),
-      %(while read line; do echo ${line##{role_config.full_name}-}; done) # Extract SHA from "service-role-dest-SHA"
+      %(while read line; do echo ${line##{role_config.container_prefix}-}; done) # Extract SHA from "service-role-dest-SHA"
   end
 
-  def list_containers
-    docker :container, :ls, "--all", *filter_args
-  end
-
-  def list_container_names
-    [ *list_containers, "--format", "'{{ .Names }}'" ]
-  end
-
-  def remove_container(version:)
-    pipe \
-      container_id_for(container_name: container_name(version)),
-      xargs(docker(:container, :rm))
-  end
-
-  def rename_container(version:, new_version:)
-    docker :rename, container_name(version), container_name(new_version)
-  end
-
-  def remove_containers
-    docker :container, :prune, "--force", *filter_args
-  end
-
-  def list_images
-    docker :image, :ls, config.repository
-  end
-
-  def remove_images
-    docker :image, :prune, "--all", "--force", *filter_args
-  end
-
-  def tag_current_as_latest
-    docker :tag, config.absolute_image, config.latest_image
-  end
 
   def make_env_directory
     make_directory role_config.host_env_directory
   end
 
   def remove_env_file
-    [:rm, "-f", role_config.host_env_file_path]
+    [ :rm, "-f", role_config.host_env_file_path ]
   end
 
-  def cord(version:)
-    pipe \
-      docker(:inspect, "-f '{{ range .Mounts }}{{printf \"%s %s\n\" .Source .Destination}}{{ end }}'", container_name(version)),
-      [:awk, "'$2 == \"#{role_config.cord_container_directory}\" {print $1}'"]
-  end
-
-  def tie_cord(cord)
-    create_empty_file(cord)
-  end
-
-  def cut_cord(cord)
-    remove_directory(cord)
-  end
 
   private
     def container_name(version = nil)
-      [ role_config.full_name, version || config.version ].compact.join("-")
+      [ role_config.container_prefix, version || config.version ].compact.join("-")
     end
 
     def filter_args(statuses: nil)
@@ -174,7 +86,7 @@ class Kamal::Commands::App < Kamal::Commands::Base
     end
 
     def service_role_dest
-      [config.service, role, config.destination].compact.join("-")
+      [ config.service, role, config.destination ].compact.join("-")
     end
 
     def filters(statuses: nil)

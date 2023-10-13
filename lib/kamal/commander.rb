@@ -39,6 +39,10 @@ class Kamal::Commander
     specific_hosts&.first || specific_roles&.first&.primary_host || config.primary_web_host
   end
 
+  def primary_role
+    roles_on(primary_host).first
+  end
+
   def roles
     (specific_roles || config.roles).select do |role|
       ((specific_hosts || config.all_hosts) & role.hosts).any?
@@ -48,14 +52,6 @@ class Kamal::Commander
   def hosts
     (specific_hosts || config.all_hosts).select do |host|
       (specific_roles || config.roles).flat_map(&:hosts).include?(host)
-    end
-  end
-
-  def boot_strategy
-    if config.boot.limit.present?
-      { in: :groups, limit: config.boot.limit, wait: config.boot.wait }
-    else
-      {}
     end
   end
 
@@ -128,6 +124,7 @@ class Kamal::Commander
     @traefik ||= Kamal::Commands::Traefik.new(config)
   end
 
+
   def with_verbosity(level)
     old_level = self.verbosity
 
@@ -138,6 +135,14 @@ class Kamal::Commander
   ensure
     self.verbosity = old_level
     SSHKit.config.output_verbosity = old_level
+  end
+
+  def boot_strategy
+    if config.boot.limit.present?
+      { in: :groups, limit: config.boot.limit, wait: config.boot.wait }
+    else
+      {}
+    end
   end
 
   def holding_lock?

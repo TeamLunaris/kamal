@@ -1,9 +1,14 @@
 class Kamal::Cli::Main < Kamal::Cli::Base
-  desc "setup", "Setup all accessories and deploy app to servers"
+  desc "setup", "Setup all accessories, push the env, and deploy app to servers"
   def setup
     print_runtime do
       mutating do
+        say "Ensure Docker is installed...", :magenta
         invoke "kamal:cli:server:bootstrap"
+
+        say "Push env files...", :magenta
+        invoke "kamal:cli:env:push"
+
         invoke "kamal:cli:accessory:boot", [ "all" ]
         deploy
       end
@@ -37,7 +42,7 @@ class Kamal::Cli::Main < Kamal::Cli::Base
         invoke "kamal:cli:healthcheck:perform", [], invoke_options
 
         say "Detect stale containers...", :magenta
-        invoke "kamal:cli:app:stale_containers", [], invoke_options
+        invoke "kamal:cli:app:stale_containers", [], invoke_options.merge(stop: true)
 
         invoke "kamal:cli:app:boot", [], invoke_options
 
@@ -70,7 +75,7 @@ class Kamal::Cli::Main < Kamal::Cli::Base
         invoke "kamal:cli:healthcheck:perform", [], invoke_options
 
         say "Detect stale containers...", :magenta
-        invoke "kamal:cli:app:stale_containers", [], invoke_options
+        invoke "kamal:cli:app:stale_containers", [], invoke_options.merge(stop: true)
 
         invoke "kamal:cli:app:boot", [], invoke_options
       end

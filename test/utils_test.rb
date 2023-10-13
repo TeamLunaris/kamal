@@ -11,67 +11,6 @@ class UtilsTest < ActiveSupport::TestCase
       Kamal::Utils.argumentize("--label", { foo: "bar" }, sensitive: true).last
   end
 
-  test "env file simple" do
-    env = {
-      "foo" => "bar",
-      "baz" => "haz"
-    }
-
-    assert_equal "foo=bar\nbaz=haz\n", \
-      Kamal::Utils.env_file_with_secrets(env)
-  end
-
-  test "env file clear" do
-    env = {
-      "clear" => {
-        "foo" => "bar",
-        "baz" => "haz"
-      }
-    }
-
-    assert_equal "foo=bar\nbaz=haz\n", \
-      Kamal::Utils.env_file_with_secrets(env)
-  end
-
-  test "env file secret" do
-    ENV["PASSWORD"] = "hello"
-    env = {
-      "secret" => [ "PASSWORD" ]
-    }
-
-    assert_equal "PASSWORD=hello\n", \
-      Kamal::Utils.env_file_with_secrets(env)
-  ensure
-    ENV.delete "PASSWORD"
-  end
-
-  test "env file missing secret" do
-    env = {
-      "secret" => [ "PASSWORD" ]
-    }
-
-    assert_raises(KeyError) { Kamal::Utils.env_file_with_secrets(env) }
-
-  ensure
-    ENV.delete "PASSWORD"
-  end
-
-  test "env file secret and clear" do
-    ENV["PASSWORD"] = "hello"
-    env = {
-      "secret" => [ "PASSWORD" ],
-      "clear" => {
-        "foo" => "bar",
-        "baz" => "haz"
-      }
-    }
-
-    assert_equal "PASSWORD=hello\nfoo=bar\nbaz=haz\n", \
-      Kamal::Utils.env_file_with_secrets(env)
-  ensure
-    ENV.delete "PASSWORD"
-  end
-
   test "optionize" do
     assert_equal [ "--foo", "\"bar\"", "--baz", "\"qux\"", "--quux" ], \
       Kamal::Utils.optionize({ foo: "bar", baz: "qux", quux: true })
@@ -112,15 +51,5 @@ class UtilsTest < ActiveSupport::TestCase
       Kamal::Utils.escape_shell_value("^(https?://)www.example.com/(.*)$")
     assert_equal "\"https://example.com/\\$2\"",
       Kamal::Utils.escape_shell_value("https://example.com/$2")
-  end
-
-  test "uncommitted changes exist" do
-    Kamal::Utils.expects(:`).with("git status --porcelain").returns("M   file\n")
-    assert_equal "M   file", Kamal::Utils.uncommitted_changes
-  end
-
-  test "uncommitted changes do not exist" do
-    Kamal::Utils.expects(:`).with("git status --porcelain").returns("")
-    assert_equal "", Kamal::Utils.uncommitted_changes
   end
 end

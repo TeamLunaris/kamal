@@ -20,6 +20,8 @@ class MainTest < IntegrationTest
     assert_app_is_up version: second_version
     assert_hooks_ran "pre-connect", "pre-build", "pre-deploy", "post-deploy"
 
+    assert_accumulated_assets first_version, second_version
+
     kamal :rollback, first_version
     assert_hooks_ran "pre-connect", "pre-deploy", "post-deploy"
     assert_app_is_up version: first_version
@@ -54,7 +56,7 @@ class MainTest < IntegrationTest
     assert_equal({ user: "root", keepalive: true, keepalive_interval: 30, log_level: :fatal }, config[:ssh_options])
     assert_equal({ "multiarch" => false, "args" => { "COMMIT_SHA" => version } }, config[:builder])
     assert_equal [ "--log-opt", "max-size=\"10m\"" ], config[:logging]
-    assert_equal({ "path" => "/up", "port" => 3000, "max_attempts" => 7, "exposed_port" => 3999, "cord"=>"/tmp/kamal-cord", "cmd"=>"wget -qO- http://localhost > /dev/null || exit 1" }, config[:healthcheck])
+    assert_equal({ "path" => "/up", "port" => 3000, "max_attempts" => 7, "exposed_port" => 3999, "cord"=>"/tmp/kamal-cord", "log_lines" => 50, "cmd"=>"wget -qO- http://localhost > /dev/null || exit 1" }, config[:healthcheck])
   end
 
   private
@@ -68,5 +70,13 @@ class MainTest < IntegrationTest
 
     def assert_no_remote_env_file
       assert_equal "nofile", docker_compose("exec vm1 stat /root/.kamal/env/roles/app-web.env 2> /dev/null || echo nofile", capture: true)
+    end
+
+    def assert_accumulated_assets(*versions)
+      versions.each do |version|
+        assert_equal "200", Net::HTTP.get_response(URI.parse("http://localhost:12345/versions/#{version}")).code
+      end
+
+      assert_equal "200", Net::HTTP.get_response(URI.parse("http://localhost:12345/versions/.hidden")).code
     end
 end

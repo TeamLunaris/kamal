@@ -16,26 +16,6 @@ module Kamal::Utils
     end
   end
 
-  def env_file_with_secrets(env)
-    env_file = StringIO.new.tap do |contents|
-      if (secrets = env["secret"]).present?
-        env.fetch("secret", env)&.each do |key|
-          contents << docker_env_file_line(key, ENV.fetch(key))
-        end
-        env["clear"]&.each do |key, value|
-          contents << docker_env_file_line(key, value)
-        end
-      else
-        env.fetch("clear", env)&.each do |key, value|
-          contents << docker_env_file_line(key, value)
-        end
-      end
-    end.string
-
-    # Ensure the file has some contents to avoid the SSHKIT empty file warning
-    env_file || "\n"
-  end
-
   # Returns a list of shell-dashed option arguments. If the value is true, it's treated like a value-less option.
   def optionize(args, with: nil)
     options = if with
@@ -72,47 +52,10 @@ module Kamal::Utils
     end
   end
 
-  def unredacted(value)
-    case
-    when value.respond_to?(:unredacted)
-      value.unredacted
-    when value.respond_to?(:transform_values)
-      value.transform_values { |value| unredacted value }
-    when value.respond_to?(:map)
-      value.map { |element| unredacted element }
-    else
-      value
-    end
-  end
-
   # Escape a value to make it safe for shell use.
   def escape_shell_value(value)
     value.to_s.dump
       .gsub(/`/, '\\\\`')
       .gsub(DOLLAR_SIGN_WITHOUT_SHELL_EXPANSION_REGEX, '\$')
-  end
-
-  # Abbreviate a git revhash for concise display
-  def abbreviate_version(version)
-    if version
-      # Don't abbreviate <sha>_uncommitted_<etc>
-      if version.include?("_")
-        version
-      else
-        version[0...7]
-      end
-    end
-  end
-
-  def uncommitted_changes
-    `git status --porcelain`.strip
-  end
-
-  def docker_env_file_line(key, value)
-    if key.include?("\n") || value.to_s.include?("\n")
-      raise ArgumentError, "docker env file format does not support newlines in keys or values, key: #{key}"
-    end
-
-    "#{key.to_s}=#{value.to_s}\n"
   end
 end

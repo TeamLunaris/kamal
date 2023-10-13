@@ -75,7 +75,7 @@ class ConfigurationTest < ActiveSupport::TestCase
   test "version no git repo" do
     ENV.delete("VERSION")
 
-    @config.expects(:system).with("git rev-parse").returns(nil)
+    Kamal::Git.expects(:used?).returns(nil)
     error = assert_raises(RuntimeError) { @config.version}
     assert_match /no git repository found/, error.message
   end
@@ -83,16 +83,16 @@ class ConfigurationTest < ActiveSupport::TestCase
   test "version from git committed" do
     ENV.delete("VERSION")
 
-    @config.expects(:`).with("git rev-parse HEAD").returns("git-version")
-    Kamal::Utils.expects(:uncommitted_changes).returns("")
+    Kamal::Git.expects(:revision).returns("git-version")
+    Kamal::Git.expects(:uncommitted_changes).returns("")
     assert_equal "git-version", @config.version
   end
 
   test "version from git uncommitted" do
     ENV.delete("VERSION")
 
-    @config.expects(:`).with("git rev-parse HEAD").returns("git-version")
-    Kamal::Utils.expects(:uncommitted_changes).returns("M   file\n")
+    Kamal::Git.expects(:revision).returns("git-version")
+    Kamal::Git.expects(:uncommitted_changes).returns("M   file\n")
     assert_match /^git-version_uncommitted_[0-9a-f]{16}$/, @config.version
   end
 
@@ -122,6 +122,10 @@ class ConfigurationTest < ActiveSupport::TestCase
 
   test "service with version" do
     assert_equal "app-missing", @config.service_with_version
+  end
+
+  test "healthcheck service" do
+    assert_equal "healthcheck-app", @config.healthcheck_service
   end
 
   test "env with missing secret" do
@@ -210,6 +214,18 @@ class ConfigurationTest < ActiveSupport::TestCase
     end
   end
 
+  test "destination required" do
+    dest_config_file = Pathname.new(File.expand_path("fixtures/deploy_for_required_dest.yml", __dir__))
+
+    assert_raises(ArgumentError) do
+      config = Kamal::Configuration.create_from config_file: dest_config_file
+    end
+
+    assert_nothing_raised do
+      config = Kamal::Configuration.create_from config_file: dest_config_file, destination: "world"
+    end
+  end
+
   test "to_h" do
     expected_config = \
       { :roles=>["web"],
@@ -224,7 +240,7 @@ class ConfigurationTest < ActiveSupport::TestCase
         :volume_args=>["--volume", "/local/path:/container/path"],
         :builder=>{},
         :logging=>["--log-opt", "max-size=\"10m\""],
-        :healthcheck=>{ "path"=>"/up", "port"=>3000, "max_attempts" => 7, "exposed_port" => 3999, "cord" => "/tmp/kamal-cord" }}
+        :healthcheck=>{ "path"=>"/up", "port"=>3000, "max_attempts" => 7, "exposed_port" => 3999, "cord" => "/tmp/kamal-cord", "log_lines" => 50 }}
 
     assert_equal expected_config, @config.to_h
   end
@@ -264,5 +280,10 @@ class ConfigurationTest < ActiveSupport::TestCase
   test "run id" do
     SecureRandom.expects(:hex).with(16).returns("09876543211234567890098765432112")
     assert_equal "09876543211234567890098765432112", @config.run_id
+  end
+
+  test "asset path" do
+    assert_nil @config.asset_path
+    assert_equal "foo", Kamal::Configuration.new(@deploy.merge!(asset_path: "foo")).asset_path
   end
 end
