@@ -122,11 +122,34 @@ class CliMainTest < CliTestCase
       refute_match /Running the post-deploy hook.../, output
     end
   end
+  
+  test "deploy without healthcheck if primary host doesn't have traefik" do
+    invoke_options = { "config_file" => "test/fixtures/deploy_workers_only.yml", "version" => "999", "skip_hooks" => false }
+
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:healthcheck:perform", [], invoke_options).never
+    
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:registry:login", [], invoke_options)
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:build:deliver", [], invoke_options)
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:traefik:boot", [], invoke_options)
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:app:stale_containers", [], invoke_options.merge(stop: true))
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:app:boot", [], invoke_options)
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:prune:all", [], invoke_options)
+
+    run_command("deploy", config_file: "deploy_workers_only")
+  end
 
   test "deploy with missing secrets" do
-    assert_raises(KeyError) do
-      run_command("deploy", config_file: "deploy_with_secrets")
-    end
+    invoke_options = { "config_file" => "test/fixtures/deploy_with_secrets.yml", "version" => "999", "skip_hooks" => false }
+
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:registry:login", [], invoke_options)
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:build:deliver", [], invoke_options)
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:traefik:boot", [], invoke_options)
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:healthcheck:perform", [], invoke_options)
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:app:stale_containers", [], invoke_options.merge(stop: true))
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:app:boot", [], invoke_options)
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:prune:all", [], invoke_options)
+
+    run_command("deploy", config_file: "deploy_with_secrets")
   end
 
   test "redeploy" do
@@ -275,12 +298,35 @@ class CliMainTest < CliTestCase
     end
   end
 
+  test "config with primary web role override" do
+    run_command("config", config_file: "deploy_primary_web_role_override").tap do |output|
+      config = YAML.load(output)
+
+      assert_equal ["web_chicago", "web_tokyo"], config[:roles]
+      assert_equal ["1.1.1.1", "1.1.1.2", "1.1.1.3", "1.1.1.4"], config[:hosts]
+      assert_equal "1.1.1.3", config[:primary_host]
+    end
+  end
+
   test "config with destination" do
     run_command("config", "-d", "world", config_file: "deploy_for_dest").tap do |output|
       config = YAML.load(output)
 
       assert_equal ["web"], config[:roles]
       assert_equal ["1.1.1.1", "1.1.1.2"], config[:hosts]
+      assert_equal "999", config[:version]
+      assert_equal "registry.digitalocean.com/dhh/app", config[:repository]
+      assert_equal "registry.digitalocean.com/dhh/app:999", config[:absolute_image]
+      assert_equal "app-999", config[:service_with_version]
+    end
+  end
+
+  test "config with aliases" do
+    run_command("config", config_file: "deploy_with_aliases").tap do |output|
+      config = YAML.load(output)
+
+      assert_equal ["web", "web_tokyo", "workers", "workers_tokyo"], config[:roles]
+      assert_equal ["1.1.1.1", "1.1.1.2", "1.1.1.3", "1.1.1.4"], config[:hosts]
       assert_equal "999", config[:version]
       assert_equal "registry.digitalocean.com/dhh/app", config[:repository]
       assert_equal "registry.digitalocean.com/dhh/app:999", config[:absolute_image]
@@ -346,11 +392,33 @@ class CliMainTest < CliTestCase
     run_command("envify")
   end
 
+  test "envify with blank line trimming" do
+    file = <<~EOF
+      HELLO=<%= 'world' %>
+      <% if true -%>
+      KEY=value
+      <% end -%>
+    EOF
+
+    File.expects(:read).with(".env.erb").returns(file.strip)
+    File.expects(:write).with(".env", "HELLO=world\nKEY=value\n", perm: 0600)
+
+    run_command("envify")
+  end
+
   test "envify with destination" do
     File.expects(:read).with(".env.world.erb").returns("HELLO=<%= 'world' %>")
     File.expects(:write).with(".env.world", "HELLO=world", perm: 0600)
 
     run_command("envify", "-d", "world", config_file: "deploy_for_dest")
+  end
+
+  test "envify with skip_push" do
+    File.expects(:read).with(".env.erb").returns("HELLO=<%= 'world' %>")
+    File.expects(:write).with(".env", "HELLO=world", perm: 0600)
+
+    Kamal::Cli::Main.any_instance.expects(:invoke).with("kamal:cli:env:push").never
+    run_command("envify", "--skip-push")
   end
 
   test "remove with confirmation" do

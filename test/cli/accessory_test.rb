@@ -48,6 +48,18 @@ class CliAccessoryTest < CliTestCase
     run_command("reboot", "mysql")
   end
 
+  test "reboot all" do
+    Kamal::Commands::Registry.any_instance.expects(:login).times(3)
+    Kamal::Cli::Accessory.any_instance.expects(:stop).with("mysql")
+    Kamal::Cli::Accessory.any_instance.expects(:remove_container).with("mysql")
+    Kamal::Cli::Accessory.any_instance.expects(:boot).with("mysql", login: false)
+    Kamal::Cli::Accessory.any_instance.expects(:stop).with("redis")
+    Kamal::Cli::Accessory.any_instance.expects(:remove_container).with("redis")
+    Kamal::Cli::Accessory.any_instance.expects(:boot).with("redis", login: false)
+
+    run_command("reboot", "all")
+  end
+
   test "start" do
     assert_match "docker container start app-mysql", run_command("start", "mysql")
   end
@@ -97,7 +109,7 @@ class CliAccessoryTest < CliTestCase
 
   test "logs with follow" do
     SSHKit::Backend::Abstract.any_instance.stubs(:exec)
-      .with("ssh -t root@1.1.1.3 'docker logs app-mysql --timestamps --tail 10 --follow 2>&1'")
+      .with("ssh -t root@1.1.1.3 -p 22 'docker logs app-mysql --timestamps --tail 10 --follow 2>&1'")
 
     assert_match "docker logs app-mysql --timestamps --tail 10 --follow 2>&1", run_command("logs", "mysql", "--follow")
   end

@@ -58,9 +58,9 @@ class ConfigurationTest < ActiveSupport::TestCase
     assert_equal [ "1.1.1.1", "1.1.1.2", "1.1.1.3" ], @config_with_roles.all_hosts
   end
 
-  test "primary web host" do
-    assert_equal "1.1.1.1", @config.primary_web_host
-    assert_equal "1.1.1.1", @config_with_roles.primary_web_host
+  test "primary host" do
+    assert_equal "1.1.1.1", @config.primary_host
+    assert_equal "1.1.1.1", @config_with_roles.primary_host
   end
 
   test "traefik hosts" do
@@ -128,14 +128,6 @@ class ConfigurationTest < ActiveSupport::TestCase
     assert_equal "healthcheck-app", @config.healthcheck_service
   end
 
-  test "env with missing secret" do
-    assert_raises(KeyError) do
-      config = Kamal::Configuration.new(@deploy.tap { |c| c.merge!({
-        env: { "secret" => [ "PASSWORD" ] }
-      }) }).ensure_env_available
-    end
-  end
-
   test "valid config" do
     assert @config.valid?
     assert @config_with_roles.valid?
@@ -170,6 +162,16 @@ class ConfigurationTest < ActiveSupport::TestCase
     # One role with hosts, one without
     assert_raises(ArgumentError) do
       Kamal::Configuration.new @deploy.merge(servers: { "web" => %w[ web ], "workers" => { "hosts" => %w[ ] } })
+    end
+  end
+
+  test "allow_empty_roles" do
+    assert_silent do
+      Kamal::Configuration.new @deploy.merge(servers: { "web" => %w[ web ], "workers" => { "hosts" => %w[ ] } }, allow_empty_roles: true)
+    end
+
+    assert_raises(ArgumentError) do
+      Kamal::Configuration.new @deploy.merge(servers: { "web" => %w[], "workers" => { "hosts" => %w[] } }, allow_empty_roles: true)
     end
   end
 
@@ -235,7 +237,7 @@ class ConfigurationTest < ActiveSupport::TestCase
         :repository=>"dhh/app",
         :absolute_image=>"dhh/app:missing",
         :service_with_version=>"app-missing",
-        :ssh_options=>{ :user=>"root", log_level: :fatal, keepalive: true, keepalive_interval: 30 },
+        :ssh_options=>{ :user=>"root", port: 22, log_level: :fatal, keepalive: true, keepalive_interval: 30 },
         :sshkit=>{},
         :volume_args=>["--volume", "/local/path:/container/path"],
         :builder=>{},
@@ -285,5 +287,26 @@ class ConfigurationTest < ActiveSupport::TestCase
   test "asset path" do
     assert_nil @config.asset_path
     assert_equal "foo", Kamal::Configuration.new(@deploy.merge!(asset_path: "foo")).asset_path
+  end
+
+  test "primary role" do
+    assert_equal "web", @config.primary_role
+
+    config = Kamal::Configuration.new(@deploy_with_roles.deep_merge({
+      servers: { "alternate_web" => { "hosts" => [ "1.1.1.4", "1.1.1.5" ] } },
+      primary_role: "alternate_web" } ))
+
+
+    assert_equal "alternate_web", config.primary_role
+    assert_equal "1.1.1.4", config.primary_host
+    assert config.role(:alternate_web).primary? 
+    assert config.role(:alternate_web).running_traefik?
+  end
+
+  test "primary role missing" do
+    error = assert_raises(ArgumentError) do
+      Kamal::Configuration.new(@deploy.merge(primary_role: "bar"))
+    end
+    assert_match /bar isn't defined/, error.message
   end
 end

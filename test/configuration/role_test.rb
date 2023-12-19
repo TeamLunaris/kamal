@@ -42,7 +42,7 @@ class ConfigurationRoleTest < ActiveSupport::TestCase
   end
 
   test "special label args for web" do
-    assert_equal [ "--label", "service=\"app\"", "--label", "role=\"web\"", "--label", "traefik.http.services.app-web.loadbalancer.server.scheme=\"http\"", "--label", "traefik.http.routers.app-web.rule=\"PathPrefix(\\`/\\`)\"", "--label", "traefik.http.middlewares.app-web-retry.retry.attempts=\"5\"", "--label", "traefik.http.middlewares.app-web-retry.retry.initialinterval=\"500ms\"", "--label", "traefik.http.routers.app-web.middlewares=\"app-web-retry@docker\"" ], @config.role(:web).label_args
+    assert_equal [ "--label", "service=\"app\"", "--label", "role=\"web\"", "--label", "traefik.http.services.app-web.loadbalancer.server.scheme=\"http\"", "--label", "traefik.http.routers.app-web.rule=\"PathPrefix(\\`/\\`)\"", "--label", "traefik.http.routers.app-web.priority=\"2\"", "--label", "traefik.http.middlewares.app-web-retry.retry.attempts=\"5\"", "--label", "traefik.http.middlewares.app-web-retry.retry.initialinterval=\"500ms\"", "--label", "traefik.http.routers.app-web.middlewares=\"app-web-retry@docker\"" ], @config.role(:web).label_args
   end
 
   test "custom labels" do
@@ -66,7 +66,7 @@ class ConfigurationRoleTest < ActiveSupport::TestCase
       c[:servers]["beta"] = { "traefik" => "true", "hosts" => [ "1.1.1.5" ] }
     })
 
-    assert_equal [ "--label", "service=\"app\"", "--label", "role=\"beta\"", "--label", "traefik.http.services.app-beta.loadbalancer.server.scheme=\"http\"", "--label", "traefik.http.routers.app-beta.rule=\"PathPrefix(\\`/\\`)\"", "--label", "traefik.http.middlewares.app-beta-retry.retry.attempts=\"5\"", "--label", "traefik.http.middlewares.app-beta-retry.retry.initialinterval=\"500ms\"", "--label", "traefik.http.routers.app-beta.middlewares=\"app-beta-retry@docker\"" ], config.role(:beta).label_args
+    assert_equal [ "--label", "service=\"app\"", "--label", "role=\"beta\"", "--label", "traefik.http.services.app-beta.loadbalancer.server.scheme=\"http\"", "--label", "traefik.http.routers.app-beta.rule=\"PathPrefix(\\`/\\`)\"", "--label", "traefik.http.routers.app-beta.priority=\"2\"", "--label", "traefik.http.middlewares.app-beta-retry.retry.attempts=\"5\"", "--label", "traefik.http.middlewares.app-beta-retry.retry.initialinterval=\"500ms\"", "--label", "traefik.http.routers.app-beta.middlewares=\"app-beta-retry@docker\"" ], config.role(:beta).label_args
   end
 
   test "env overwritten by role" do
@@ -169,6 +169,34 @@ class ConfigurationRoleTest < ActiveSupport::TestCase
       REDIS_PASSWORD=secret456
       REDIS_URL=redis://a/b
       WEB_CONCURRENCY=4
+    ENV
+
+    assert_equal expected, @config_with_roles.role(:workers).env_file.to_s
+  ensure
+    ENV["REDIS_PASSWORD"] = nil
+  end
+
+  test "env overwritten by role with secrets" do
+    @deploy_with_roles[:env] = {
+      "clear" => {
+        "REDIS_URL" => "redis://a/b"
+      },
+      "secret" => [
+        "REDIS_PASSWORD"
+      ]
+    }
+
+    @deploy_with_roles[:servers]["workers"]["env"] = {
+      "clear" => {
+        "REDIS_URL" => "redis://c/d",
+      },
+    }
+
+    ENV["REDIS_PASSWORD"] = "secret456"
+
+    expected = <<~ENV
+      REDIS_PASSWORD=secret456
+      REDIS_URL=redis://c/d
     ENV
 
     assert_equal expected, @config_with_roles.role(:workers).env_file.to_s

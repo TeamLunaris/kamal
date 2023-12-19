@@ -14,8 +14,8 @@ module Kamal::Cli
     class_option :version, desc: "Run commands against a specific app version"
 
     class_option :primary, type: :boolean, aliases: "-p", desc: "Run commands only on primary host instead of all"
-    class_option :hosts, aliases: "-h", desc: "Run commands on these hosts instead of all (separate by comma)"
-    class_option :roles, aliases: "-r", desc: "Run commands on these roles instead of all (separate by comma)"
+    class_option :hosts, aliases: "-h", desc: "Run commands on these hosts instead of all (separate by comma, supports wildcards with *)"
+    class_option :roles, aliases: "-r", desc: "Run commands on these roles instead of all (separate by comma, supports wildcards with *)"
 
     class_option :config_file, aliases: "-c", default: "config/deploy.yml", desc: "Path to config file"
     class_option :destination, aliases: "-d", desc: "Specify destination to be used for config file (staging -> deploy.staging.yml)"
@@ -24,6 +24,7 @@ module Kamal::Cli
 
     def initialize(*)
       super
+      @original_env = ENV.to_h.dup
       load_envs
       initialize_commander(options_with_subcommand_class_options)
     end
@@ -35,6 +36,12 @@ module Kamal::Cli
         else
           Dotenv.load(".env")
         end
+      end
+
+      def reload_envs
+        ENV.clear
+        ENV.update(@original_env)
+        load_envs
       end
 
       def options_with_subcommand_class_options
@@ -74,8 +81,6 @@ module Kamal::Cli
 
       def mutating
         return yield if KAMAL.holding_lock?
-
-        KAMAL.config.ensure_env_available
 
         run_hook "pre-connect"
 
